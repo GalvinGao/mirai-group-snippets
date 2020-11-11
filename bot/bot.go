@@ -14,8 +14,8 @@ import (
 	"github.com/sirupsen/logrus"
 	asc2art "github.com/yinghau76/go-ascii-art"
 
-	"github.com/Logiase/MiraiGo-Template/config"
-	"github.com/Logiase/MiraiGo-Template/utils"
+	"github.com/GalvinGao/mirai-group-snippets/config"
+	"github.com/GalvinGao/mirai-group-snippets/utils"
 )
 
 // Bot 全局 Bot

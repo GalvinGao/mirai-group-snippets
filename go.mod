@@ -1,4 +1,4 @@
-module github.com/Logiase/MiraiGo-Template
+module github.com/GalvinGao/mirai-group-snippets
 
 go 1.15
 
@@ -25,4 +25,6 @@ require (
 	golang.org/x/sys v0.0.0-20201009025420-dfb3f7c4e634 // indirect
 	gopkg.in/ini.v1 v1.62.0 // indirect
 	gopkg.in/yaml.v2 v2.3.0 // indirect
+	gorm.io/driver/mysql v1.0.3 // indirect
+	gorm.io/gorm v1.20.6 // indirect
 )
