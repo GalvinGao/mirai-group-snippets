@@ -41,6 +41,7 @@ func Init() {
 		),
 		false,
 	}
+	GenRandomDevice()
 	err := client.SystemDeviceInfo.ReadJson(utils.ReadFile("./device.json"))
 	if err != nil {
 		logger.WithError(err).Panic("device.json error")
