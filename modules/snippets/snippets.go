@@ -2,10 +2,15 @@ package snippets
 
 import (
 	"crypto/sha512"
+	"errors"
+	"fmt"
 	"github.com/GalvinGao/mirai-group-snippets/config"
+	"github.com/davecgh/go-spew/spew"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"io/ioutil"
+	"math/rand"
+	"os"
 	"path"
 	"strings"
 	"sync"
@@ -50,8 +55,9 @@ type snippet struct {
 type Snippet struct {
 	gorm.Model
 
-	FromUser int64
-	FromGroup int64
+	FromUserUin int64
+	FromUserDisplay string
+	FromGroup   int64
 
 	ImagePath string
 }
@@ -124,28 +130,52 @@ var instance *snippet
 
 var logger = utils.GetModuleLogger(ModuleID)
 
-func (m *snippet) sendRandomSnippet(client *client.QQClient) {
+func (m *snippet) sendRandomSnippet() (*Snippet, error) {
 	//client.SendGroupMessage()
-
+	var count int64
+	err := m.db.Model(&Snippet{}).Count(&count).Error
+	if err != nil {
+		return nil, err
+	}
+	pivot := rand.Int63n(count + 1)
+	var found Snippet
+	err = m.db.Model(&Snippet{}).Offset(int(pivot)).Limit(1).First(&found).Error
+	if err != nil {
+		return nil, err
+	}
+	return &found, err
 }
 
-func (m *snippet) recordSnippet(msg *message.GroupMessage, img []byte) {
+func (m *snippet) recordSnippet(msg *message.GroupMessage, img []byte) (*Snippet, error) {
 	shasum := sha512.Sum512(img)
 	imgPath := path.Join("images", string(shasum[:]))
 
 	err := ioutil.WriteFile(imgPath, img, 0644)
 	if err != nil {
 		logger.Errorln("failed to write to file", err)
+		return &Snippet{}, errors.New("[!] 语录添加失败：internal: failed to write image to file")
 	}
 
-	err = m.db.Create(&Snippet{
-		FromUser:  msg.Sender.Uin,
-		FromGroup: msg.GroupCode,
-		ImagePath: imgPath,
-	}).Error
+	s := &Snippet{
+		FromUserUin: msg.Sender.Uin,
+		FromUserDisplay: msg.Sender.DisplayName(),
+		FromGroup:   msg.GroupCode,
+		ImagePath:   imgPath,
+	}
+
+	err = m.db.Create(s).Error
 	if err != nil {
 		logger.Errorln("failed to create db record", err)
+		return &Snippet{}, errors.New("[!] 语录添加失败：internal: failed to create db record")
 	}
+
+	return s, nil
+}
+
+func (m *snippet) sendText(client *client.QQClient, groupId int64, text string) {
+	sm := message.NewSendingMessage()
+	sm.Append(message.NewText(text))
+	client.SendGroupMessage(groupId, sm)
 }
 
 func (m *snippet) dispatcher(client *client.QQClient, msg *message.GroupMessage) {
@@ -172,8 +202,36 @@ func (m *snippet) dispatcher(client *client.QQClient, msg *message.GroupMessage)
 
 	switch command {
 	case CommandTypeAddRecord:
-		m.recordSnippet(msg, imageData)
+		if imageData == nil {
+			m.sendText(client, msg.GroupCode, "[!] 语录添加失败：no image found in message. please send image with the command in one message.")
+			return
+		}
+		s, err := m.recordSnippet(msg, imageData)
+		if err != nil {
+			m.sendText(client, msg.GroupCode, err.Error())
+			return
+		}
+		m.sendText(client, msg.GroupCode, fmt.Sprintf("[✓] 语录已添加为如下记录\n%s", spew.Sdump(s)))
 	case CommandTypeRandomRecord:
-		m.sendRandomSnippet(client)
+		s, err := m.sendRandomSnippet()
+		if err != nil {
+			m.sendText(client, msg.GroupCode, "[!] 随机语录读取失败：" + err.Error())
+			return
+		}
+		sm := message.NewSendingMessage()
+		f, err := os.OpenFile(s.ImagePath, os.O_RDONLY, 0644)
+		if err != nil {
+			m.sendText(client, msg.GroupCode, "[!] 随机语录读取失败：" + err.Error())
+			return
+		}
+		img, err := ioutil.ReadAll(f)
+		if err != nil {
+			m.sendText(client, msg.GroupCode, "[!] 随机语录读取失败：" + err.Error())
+			return
+		}
+
+		sm.Append(message.NewText(fmt.Sprintf("由 %v (%v) 录入于群 %v 的随机语录 #%v：", s.FromUserDisplay, s.FromUserUin, s.FromGroup, s.ID)))
+		sm.Append(message.NewImage(img))
+		client.SendGroupMessage(msg.GroupCode, sm)
 	}
 }
